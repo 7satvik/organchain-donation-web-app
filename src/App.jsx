@@ -62,11 +62,220 @@ const Badge = ({ status }) => {
     MATCHED: "bg-emerald-100 text-emerald-700 border-emerald-200",
     REGISTERED: "bg-blue-100 text-blue-700 border-blue-200",
     AVAILABLE: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    PENDING_VERIFICATION: "bg-yellow-100 text-yellow-700 border-yellow-200",
+    VERIFIED: "bg-emerald-100 text-emerald-700 border-emerald-200",
+    REJECTED: "bg-red-100 text-red-700 border-red-200",
   };
   return (
     <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${styles[status] || "bg-gray-100"}`}>
-      {status}
+      {status?.replace(/_/g, ' ')}
     </span>
+  );
+};
+
+// Donor Self-Registration Form Component
+const DonorRegistrationForm = ({ onBack, addNotification, setIsAuthenticated, setRole }) => {
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    bloodType: '',
+    hla: '',
+    organs: [],
+    consent: false
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  const bloodTypes = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+  const organOptions = ['Kidney', 'Liver', 'Heart', 'Lungs', 'Pancreas', 'Corneas'];
+
+  const handleOrganToggle = (organ) => {
+    setFormData(prev => ({
+      ...prev,
+      organs: prev.organs.includes(organ)
+        ? prev.organs.filter(o => o !== organ)
+        : [...prev.organs, organ]
+    }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setIsSubmitting(true);
+
+    if (!formData.name || !formData.email || !formData.bloodType || !formData.organs.length || !formData.consent) {
+      setError('Please fill all required fields and provide consent');
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      const donorId = `DON-${Date.now()}`;
+      const consentHash = await sha256(`${formData.name}-${formData.email}-consent-${Date.now()}`);
+
+      const response = await fetch(`${API_URL}/donors`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: donorId,
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          bloodType: formData.bloodType,
+          hla: formData.hla || 'Pending medical test',
+          organsAvailable: formData.organs,
+          ipfsHash: '',
+          consentHash: consentHash
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setSuccess(true);
+        addNotification(`✅ Registration submitted! Your Donor ID: ${donorId}`);
+      } else {
+        setError(data.error || 'Registration failed');
+      }
+    } catch (err) {
+      setError('Network error. Please try again.');
+    }
+
+    setIsSubmitting(false);
+  };
+
+  if (success) {
+    return (
+      <div className="text-center animate-in fade-in duration-300 py-8">
+        <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-6">
+          <CheckCircle className="w-10 h-10 text-emerald-600" />
+        </div>
+        <h3 className="text-2xl font-bold text-emerald-700 mb-3">Registration Submitted!</h3>
+        <p className="text-slate-500 mb-6">
+          Your application is pending hospital verification.<br />
+          A hospital will contact you for physical verification.
+        </p>
+        <button
+          onClick={onBack}
+          className="px-6 py-3 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors font-medium"
+        >
+          Back to Login
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4 animate-in slide-in-from-right-4 duration-300">
+      <div className="flex items-center gap-4 mb-6">
+        <button type="button" onClick={onBack} className="p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-full transition-all">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div>
+          <span className="font-bold text-xl text-rose-600">Donor Registration</span>
+          <p className="text-xs text-slate-400">Pending verification by hospital</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <input
+          type="text"
+          placeholder="Full Name *"
+          value={formData.name}
+          onChange={e => setFormData({ ...formData, name: e.target.value })}
+          className="col-span-2 px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-100 outline-none text-sm"
+          required
+        />
+        <input
+          type="email"
+          placeholder="Email *"
+          value={formData.email}
+          onChange={e => setFormData({ ...formData, email: e.target.value })}
+          className="px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-100 outline-none text-sm"
+          required
+        />
+        <input
+          type="tel"
+          placeholder="Phone"
+          value={formData.phone}
+          onChange={e => setFormData({ ...formData, phone: e.target.value })}
+          className="px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 focus:bg-white focus:border-rose-400 focus:ring-2 focus:ring-rose-100 outline-none text-sm"
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Blood Type *</label>
+        <div className="flex flex-wrap gap-2">
+          {bloodTypes.map(bt => (
+            <button
+              key={bt}
+              type="button"
+              onClick={() => setFormData({ ...formData, bloodType: bt })}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${formData.bloodType === bt
+                ? 'bg-rose-500 text-white'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+            >
+              {bt}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Organs to Donate *</label>
+        <div className="grid grid-cols-3 gap-2">
+          {organOptions.map(organ => (
+            <button
+              key={organ}
+              type="button"
+              onClick={() => handleOrganToggle(organ)}
+              className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${formData.organs.includes(organ)
+                ? 'bg-rose-500 text-white'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+            >
+              {organ}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <label className="flex items-start gap-3 p-3 bg-rose-50 rounded-xl border border-rose-100">
+        <input
+          type="checkbox"
+          checked={formData.consent}
+          onChange={e => setFormData({ ...formData, consent: e.target.checked })}
+          className="mt-1 w-4 h-4 accent-rose-500"
+        />
+        <span className="text-xs text-slate-600">
+          I consent to organ donation and understand that hospital verification is required before matching. *
+        </span>
+      </label>
+
+      {error && (
+        <p className="text-sm text-red-500 bg-red-50 p-3 rounded-xl flex items-center gap-2">
+          <AlertCircle className="w-4 h-4" /> {error}
+        </p>
+      )}
+
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className={`w-full py-4 font-bold rounded-xl transition-all flex items-center justify-center gap-2 ${isSubmitting
+          ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+          : 'bg-gradient-to-r from-rose-500 to-pink-500 text-white hover:from-rose-600 hover:to-pink-600'
+          }`}
+      >
+        {isSubmitting ? (
+          <><Loader2 className="w-5 h-5 animate-spin" /> Submitting...</>
+        ) : (
+          <><Heart className="w-5 h-5" /> Submit Application</>
+        )}
+      </button>
+    </form>
   );
 };
 
@@ -75,7 +284,10 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginStep, setLoginStep] = useState('selection'); // 'selection' | 'hospital-form'
   const [hospitalId, setHospitalId] = useState('');
+  const [password, setPassword] = useState('');
+  const [hospitalName, setHospitalName] = useState('');
   const [error, setError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // App Data State
   const [view, setView] = useState('dashboard'); // dashboard, patients, donors, matching
@@ -87,32 +299,34 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [apiConnected, setApiConnected] = useState(false);
 
-  // Fetch data from blockchain API on mount
+  // Fetch data from blockchain API
+  const fetchAllData = async () => {
+    try {
+      setIsLoading(true);
+      const [patientsRes, donorsRes, healthRes] = await Promise.all([
+        fetch(`${API_URL}/patients`),
+        fetch(`${API_URL}/donors`),
+        fetch(`${API_URL}/health`)
+      ]);
+
+      const patientsData = await patientsRes.json();
+      const donorsData = await donorsRes.json();
+      const healthData = await healthRes.json();
+
+      setPatients(patientsData || []);
+      setDonors(donorsData || []);
+      setApiConnected(healthData.connected || false);
+    } catch (error) {
+      console.error('Failed to fetch from blockchain:', error);
+      setApiConnected(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch on mount
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-        const [patientsRes, donorsRes, healthRes] = await Promise.all([
-          fetch(`${API_URL}/patients`),
-          fetch(`${API_URL}/donors`),
-          fetch(`${API_URL}/health`)
-        ]);
-
-        const patientsData = await patientsRes.json();
-        const donorsData = await donorsRes.json();
-        const healthData = await healthRes.json();
-
-        setPatients(patientsData || []);
-        setDonors(donorsData || []);
-        setApiConnected(healthData.connected || false);
-      } catch (error) {
-        console.error('Failed to fetch from blockchain:', error);
-        setApiConnected(false);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchData();
+    fetchAllData();
   }, []);
 
   const addNotification = (msg) => {
@@ -128,6 +342,8 @@ export default function App() {
     setViewHistory(['dashboard']);
     setLoginStep('selection');
     setHospitalId('');
+    setPassword('');
+    setHospitalName('');
     setError('');
   };
 
@@ -150,15 +366,40 @@ export default function App() {
     }
   };
 
-  const verifyHospitalLogin = (e) => {
+  const verifyHospitalLogin = async (e) => {
     e.preventDefault();
-    if (hospitalId.length > 2) {
-      setRole('HOSPITAL_ADMIN');
-      setIsAuthenticated(true);
-      setError('');
-    } else {
-      setError('Invalid Hospital ID format (min 3 chars)');
+    setError('');
+    setIsLoggingIn(true);
+
+    try {
+      // Hash the password using SHA-256
+      const passwordHash = await sha256(password);
+
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hospitalId: hospitalId,
+          passwordHash: passwordHash
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setRole('HOSPITAL_ADMIN');
+        setIsAuthenticated(true);
+        setHospitalName(data.hospital.name);
+        setError('');
+        addNotification(`✅ Welcome, ${data.hospital.name}!`);
+      } else {
+        setError(data.error || 'Invalid credentials');
+      }
+    } catch (error) {
+      setError('Unable to connect to authentication server');
     }
+
+    setIsLoggingIn(false);
   };
 
   const Navbar = () => (
@@ -184,8 +425,8 @@ export default function App() {
         <div className="flex items-center gap-4">
           {isAuthenticated && (
             <div className="flex items-center gap-3">
-              <span className="text-xs font-bold text-[#10b981] bg-[#10b981]/5 px-3 py-1 rounded-full border border-[#10b981]/10 uppercase">
-                {role === 'HOSPITAL_ADMIN' ? 'HOSPITAL' : 'GUEST'}
+              <span className="text-xs font-bold text-[#10b981] bg-[#10b981]/5 px-3 py-1 rounded-full border border-[#10b981]/10">
+                {role === 'HOSPITAL_ADMIN' ? (hospitalName || hospitalId) : 'GUEST'}
               </span>
               <button
                 onClick={handleLogout}
@@ -678,37 +919,84 @@ export default function App() {
           <Card className="overflow-hidden">
             <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center">
               <h3 className="font-semibold text-slate-700">Donor Ledger (Public State)</h3>
-              <span className="text-xs text-slate-500 bg-white px-2 py-1 rounded border">Verified Available</span>
+              <span className="text-xs text-slate-500 bg-white px-2 py-1 rounded border">All Donors</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
                 <thead className="bg-slate-50 text-slate-500 font-medium">
                   <tr>
                     <th className="p-3">ID</th>
+                    <th className="p-3">Name</th>
                     <th className="p-3">Blood</th>
                     <th className="p-3">Organs Available</th>
-                    <th className="p-3">HLA Data</th>
-                    <th className="p-3">Consent</th>
+                    <th className="p-3">Status</th>
+                    {role === 'HOSPITAL_ADMIN' && <th className="p-3">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {donors.map(d => (
                     <tr key={d.id} className="hover:bg-slate-50">
                       <td className="p-3 font-mono text-xs">{d.id}</td>
+                      <td className="p-3 text-slate-700">{d.name || 'Anonymous'}</td>
                       <td className="p-3"><span className="font-bold text-slate-700">{d.bloodType}</span></td>
                       <td className="p-3">
                         <div className="flex flex-wrap gap-1">
-                          {d.organsAvailable.map(o => (
+                          {(d.organsAvailable || []).map(o => (
                             <span key={o} className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100">{o}</span>
                           ))}
                         </div>
                       </td>
-                      <td className="p-3 text-xs text-slate-500 truncate max-w-[150px]">{d.hla}</td>
                       <td className="p-3">
-                        <div className="flex items-center text-emerald-600 text-xs font-medium">
-                          <CheckCircle className="w-3 h-3 mr-1" /> Signed
-                        </div>
+                        <Badge status={d.verificationStatus || 'PENDING_VERIFICATION'} />
                       </td>
+                      {role === 'HOSPITAL_ADMIN' && (
+                        <td className="p-3">
+                          {(d.verificationStatus === 'PENDING_VERIFICATION' || !d.verificationStatus) ? (
+                            <div className="flex gap-2">
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await fetch(`${API_URL}/donors/${d.id}/verify`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ hospitalId: hospitalId, status: 'VERIFIED' })
+                                    });
+                                    addNotification(`✅ Donor ${d.id} verified!`);
+                                    fetchAllData();
+                                  } catch (err) {
+                                    addNotification(`❌ Failed to verify donor`);
+                                  }
+                                }}
+                                className="px-2 py-1 text-xs bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200 font-medium"
+                              >
+                                ✓ Verify
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await fetch(`${API_URL}/donors/${d.id}/verify`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ hospitalId: hospitalId, status: 'REJECTED' })
+                                    });
+                                    addNotification(`❌ Donor ${d.id} rejected`);
+                                    fetchAllData();
+                                  } catch (err) {
+                                    addNotification(`❌ Failed to reject donor`);
+                                  }
+                                }}
+                                className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 font-medium"
+                              >
+                                ✗ Reject
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-400">
+                              {d.verifiedBy ? `by ${d.verifiedBy}` : '-'}
+                            </span>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -725,36 +1013,77 @@ export default function App() {
     const [selectedPatient, setSelectedPatient] = useState(null);
     const [matches, setMatches] = useState([]);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [loadingStep, setLoadingStep] = useState(0);
+
+    const matchSteps = [
+      { text: "Verifying Donor Consent Hash...", icon: ShieldCheck },
+      { text: "Validating HLA Compatibility...", icon: Activity },
+      { text: "Checking Organ Availability...", icon: Heart },
+      { text: "Creating Immutable Match Record...", icon: Database },
+      { text: "Broadcasting to Fabric Network...", icon: Server },
+      { text: "Updating World State Ledger...", icon: Users },
+      { text: "Finalizing Transaction...", icon: CheckCircle }
+    ];
+
+    useEffect(() => {
+      if (isProcessing) {
+        setLoadingStep(0);
+        const interval = setInterval(() => {
+          setLoadingStep(prev => (prev < matchSteps.length - 1 ? prev + 1 : prev));
+        }, 800);
+        return () => clearInterval(interval);
+      }
+    }, [isProcessing]);
 
     // The "Off-Chain" Matching Algorithm
     const runMatching = (patient) => {
       setSelectedPatient(patient);
 
       const results = donors.map(donor => {
-        // 1. Blood Type Filter
+        // 1. Verification Check (CRITICAL)
+        const isVerified = donor.verificationStatus === 'VERIFIED';
+
+        // 2. Blood Type Filter
         const isBloodCompatible = canReceiveFrom(patient.bloodType, donor.bloodType);
+        const isExactBloodMatch = patient.bloodType === donor.bloodType;
 
-        // 2. Organ Filter
-        const isOrganCompatible = donor.organsAvailable.includes(patient.organNeeded);
+        // 3. Organ Filter (Safe check for array)
+        const isOrganCompatible = (donor.organsAvailable || []).includes(patient.organNeeded);
 
-        // 3. HLA Scoring (Simplified String Comparison for Demo)
+        // 4. HLA Scoring (Simplified String Comparison)
         // In production: Levenshtein distance or array intersection of specific antigens
-        const patientHla = patient.hla.split(',').map(s => s.trim());
-        const donorHla = donor.hla.split(',').map(s => s.trim());
+        const patientHla = (patient.hla || '').split(',').map(s => s.trim());
+        const donorHla = (donor.hla || '').split(',').map(s => s.trim());
         const commonAntigens = patientHla.filter(antigen => donorHla.includes(antigen));
-        const score = (commonAntigens.length / 6) * 100; // Assuming 6 loci
+        const hlaRawScore = (commonAntigens.length / Math.max(patientHla.length, 1)) * 100;
+
+        // 5. Waitlist Priority Score (Days waiting)
+        const daysWaiting = (new Date() - new Date(patient.createdAt)) / (1000 * 60 * 60 * 24);
+        // Cap priority at 30 days for max score component
+        const waitlistScore = Math.min(daysWaiting / 30, 1) * 100;
+
+        // 6. Weighted Final Score
+        // HLA: 60%, Waitlist: 30%, Exact Blood Match: 10%
+        let totalScore = 0;
+        if (isBloodCompatible && isOrganCompatible && isVerified) {
+          totalScore = (hlaRawScore * 0.6) + (waitlistScore * 0.3) + (isExactBloodMatch ? 10 : 0);
+        }
 
         return {
           donorId: donor.id,
           bloodType: donor.bloodType,
-          score: Math.min(score, 100).toFixed(1),
+          score: totalScore.toFixed(1),
+          hlaScore: hlaRawScore.toFixed(0),
+          daysWaiting: Math.floor(daysWaiting),
           common: commonAntigens.length,
-          compatible: isBloodCompatible && isOrganCompatible,
-          reason: !isBloodCompatible ? 'Blood Mismatch' : (!isOrganCompatible ? 'Organ Mismatch' : 'Compatible')
+          compatible: isBloodCompatible && isOrganCompatible && isVerified,
+          reason: !isVerified ? 'Donor Not Verified' :
+            (!isBloodCompatible ? 'Blood Mismatch' :
+              (!isOrganCompatible ? 'Organ Mismatch' : 'Compatible'))
         };
       });
 
-      // Sort: Compatible first, then by HLA Score
+      // Sort: Compatible first, then by Total Score
       const sorted = results.sort((a, b) => {
         if (a.compatible !== b.compatible) return b.compatible ? 1 : -1;
         return b.score - a.score;
@@ -766,13 +1095,51 @@ export default function App() {
     const handleApproveMatch = async (match) => {
       setIsProcessing(true);
 
-      // Simulate on-chain delay
-      await new Promise(resolve => setTimeout(resolve, 3500));
+      try {
+        // Generate match ID
+        const matchId = `MATCH-${Date.now()}`;
 
-      addNotification(`Match proposal created for ${selectedPatient.id} & ${match.donorId}`);
+        // 1. Create match on blockchain
+        const matchResponse = await fetch(`${API_URL}/matches`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: matchId,
+            patientId: selectedPatient.id,
+            donorId: match.donorId,
+            organType: selectedPatient.organNeeded,
+            hlaScore: match.score,
+            approvedBy: hospitalId || 'HOSP-DEFAULT'
+          })
+        });
 
-      // Update local state to show change
-      setPatients(prev => prev.map(p => p.id === selectedPatient.id ? { ...p, status: 'MATCHED' } : p));
+        if (!matchResponse.ok) {
+          throw new Error('Failed to create match on blockchain');
+        }
+
+        // 2. Update donor status (remove used organ)
+        await fetch(`${API_URL}/donors/${match.donorId}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            organToRemove: selectedPatient.organNeeded
+          })
+        });
+
+        // 3. Refresh data from blockchain
+        const [patientsRes, donorsRes] = await Promise.all([
+          fetch(`${API_URL}/patients`),
+          fetch(`${API_URL}/donors`)
+        ]);
+        const patientsData = await patientsRes.json();
+        const donorsData = await donorsRes.json();
+        setPatients(patientsData || []);
+        setDonors(donorsData || []);
+
+        addNotification(`✅ Match ${matchId} committed to blockchain!`);
+      } catch (error) {
+        addNotification(`❌ Error: ${error.message}`);
+      }
 
       setIsProcessing(false);
       setSelectedPatient(null);
@@ -780,29 +1147,41 @@ export default function App() {
 
     if (isProcessing) {
       return (
-        <div className="h-full flex flex-col items-center justify-center bg-white rounded-xl shadow-sm border border-slate-200 p-12 animate-in fade-in zoom-in-95 duration-300">
+        <div className="h-full flex flex-col items-center justify-center bg-white rounded-xl shadow-sm border border-slate-200 p-12">
           <div className="relative mb-8">
-            <div className="w-24 h-24 border-4 border-indigo-100 rounded-full"></div>
+            <div className="w-24 h-24 border-4 border-slate-100 rounded-full"></div>
             <div className="w-24 h-24 border-4 border-indigo-600 rounded-full border-t-transparent animate-spin absolute top-0 left-0"></div>
             <ShieldCheck className="w-10 h-10 text-indigo-600 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Finalizing Match On-Chain</h2>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Processing On-Chain</h2>
           <p className="text-slate-500 mb-8 text-center max-w-md">
-            Please wait while the smart contract verifies donor consent and updates the immutable ledger.
+            Executing smart contract transaction...
           </p>
-          <div className="w-full max-w-md space-y-3">
-            <div className="flex items-center justify-between text-sm p-3 bg-emerald-50 text-emerald-700 rounded-lg border border-emerald-100">
-              <span className="flex items-center"><CheckCircle className="w-4 h-4 mr-2" /> HLA Compatibility Check</span>
-              <span className="font-bold">PASSED</span>
-            </div>
-            <div className="flex items-center justify-between text-sm p-3 bg-emerald-50 text-emerald-700 rounded-lg border border-emerald-100">
-              <span className="flex items-center"><CheckCircle className="w-4 h-4 mr-2" /> Donor Consent Hash</span>
-              <span className="font-bold">VERIFIED</span>
-            </div>
-            <div className="flex items-center justify-between text-sm p-3 bg-indigo-50 text-indigo-700 rounded-lg border border-indigo-100 animate-pulse">
-              <span className="flex items-center"><Activity className="w-4 h-4 mr-2" /> Consensus Mechanism</span>
-              <span className="font-bold">MINING...</span>
-            </div>
+          <div className="w-full max-w-md space-y-2">
+            {matchSteps.map((s, idx) => (
+              <div
+                key={idx}
+                className={`flex items-center justify-between text-sm p-3 rounded-lg border transition-all duration-300 ${idx === loadingStep
+                    ? 'bg-indigo-50 text-indigo-700 border-indigo-100 scale-105 shadow-md'
+                    : idx < loadingStep
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-100 opacity-50'
+                      : 'bg-slate-50 text-slate-400 border-slate-100 opacity-30'
+                  }`}
+              >
+                <div className="flex items-center">
+                  {idx < loadingStep ? (
+                    <CheckCircle className="w-4 h-4 mr-3 text-emerald-600" />
+                  ) : idx === loadingStep ? (
+                    <Loader2 className="w-4 h-4 mr-3 animate-spin text-indigo-600" />
+                  ) : (
+                    <s.icon className="w-4 h-4 mr-3" />
+                  )}
+                  <span className="font-medium">{s.text}</span>
+                </div>
+                {idx < loadingStep && <span className="text-xs font-bold text-emerald-600">DONE</span>}
+                {idx === loadingStep && <span className="text-xs font-bold text-indigo-600 animate-pulse">running...</span>}
+              </div>
+            ))}
           </div>
         </div>
       );
@@ -854,16 +1233,33 @@ export default function App() {
                 {matches.map((m, idx) => (
                   <Card key={m.donorId} className={`p-4 flex items-center justify-between ${m.compatible ? 'border-l-4 border-l-emerald-500' : 'opacity-60 grayscale-[0.5]'}`}>
                     <div className="flex items-center space-x-4">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${m.compatible ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>
-                        {m.score}%
+
+                      {/* Score Circle */}
+                      <div className={`flex-shrink-0 w-12 h-12 rounded-full flex flex-col items-center justify-center font-bold border-2 ${m.compatible ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
+                        <span className="text-sm leading-none">{m.score}</span>
+                        <span className="text-[8px] font-normal text-slate-500 uppercase">Score</span>
                       </div>
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <span className="font-mono font-medium text-slate-800">{m.donorId}</span>
-                          <span className="text-xs bg-slate-100 px-1.5 py-0.5 rounded border">{m.bloodType}</span>
+
+                      <div className="flex-1 min-w-0">
+                        {/* ID and Blood Type */}
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-mono font-bold text-slate-800 text-sm">{m.donorId}</span>
+                          <span className={`text-[10px] px-1.5 rounded border ${m.bloodType === selectedPatient.bloodType ? 'bg-pink-50 text-pink-600 border-pink-100 font-bold' : 'bg-slate-100 text-slate-600'}`}>
+                            {m.bloodType}
+                          </span>
                         </div>
-                        <div className="text-xs text-slate-500 mt-0.5">
-                          HLA Matches: {m.common}/6 antigens
+
+                        {/* Metrics Grid */}
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-500">
+                          <div title="HLA Compatibility Score">
+                            🧬 HLA: <span className="font-medium text-slate-700">{m.hlaScore}%</span>
+                          </div>
+                          <div title="Based on patient wait time">
+                            ⏳ Wait: <span className="font-medium text-slate-700">{m.daysWaiting}d</span>
+                          </div>
+                          <div className="col-span-2 text-[10px] text-slate-400 truncate">
+                            Matches {m.common} antigens • {m.bloodType === selectedPatient.bloodType ? 'Exact Blood Type' : 'Compatible Blood'}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -936,39 +1332,91 @@ export default function App() {
                   </div>
                   <ChevronRight className="w-5 h-5 text-white/50 group-hover:translate-x-1 transition-transform" />
                 </button>
+
+                <button
+                  onClick={() => setLoginStep('donor-form')}
+                  className="w-full py-4 px-8 bg-gradient-to-r from-rose-500 to-pink-500 text-white font-semibold rounded-[20px] hover:from-rose-600 hover:to-pink-600 transition-all flex items-center justify-between group shadow-lg shadow-rose-100"
+                >
+                  <div className="flex items-center gap-4">
+                    <Heart className="w-6 h-6 text-white/80" />
+                    <span className="text-lg">Become a Donor</span>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-white/50 group-hover:translate-x-1 transition-transform" />
+                </button>
               </div>
+            ) : loginStep === 'donor-form' ? (
+              <DonorRegistrationForm
+                onBack={() => setLoginStep('selection')}
+                addNotification={addNotification}
+                setIsAuthenticated={setIsAuthenticated}
+                setRole={setRole}
+              />
             ) : (
-              <form onSubmit={verifyHospitalLogin} className="space-y-8 animate-in slide-in-from-right-4 duration-300">
+              <form onSubmit={verifyHospitalLogin} className="space-y-6 animate-in slide-in-from-right-4 duration-300">
                 <div className="flex items-center gap-4">
                   <button
                     type="button"
-                    onClick={() => setLoginStep('selection')}
+                    onClick={() => { setLoginStep('selection'); setError(''); setPassword(''); }}
                     className="p-3 text-[#4b5563] hover:text-[#064e3b] hover:bg-slate-100 rounded-full transition-all"
                   >
                     <ArrowLeft className="w-6 h-6" />
                   </button>
-                  <span className="font-bold text-xl text-[#064e3b]">Hospital Verification</span>
+                  <span className="font-bold text-xl text-[#064e3b]">Hospital Login</span>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-[#4b5563] uppercase tracking-widest mb-3 px-1">Registry License ID</label>
+                  <label className="block text-xs font-bold text-[#4b5563] uppercase tracking-widest mb-3 px-1">Hospital ID</label>
                   <input
                     autoFocus
                     type="text"
                     value={hospitalId}
-                    onChange={(e) => setHospitalId(e.target.value)}
-                    placeholder="e.g., HOSP-NY-001"
-                    className="w-full px-6 py-5 rounded-[20px] bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#10b981] focus:ring-4 focus:ring-[#10b981]/10 outline-none text-lg text-[#064e3b] font-medium transition-all"
+                    onChange={(e) => setHospitalId(e.target.value.toUpperCase())}
+                    placeholder="e.g., HOSP-APOLLO"
+                    className="w-full px-6 py-4 rounded-[16px] bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#10b981] focus:ring-4 focus:ring-[#10b981]/10 outline-none text-base text-[#064e3b] font-medium transition-all"
                   />
-                  {error && <p className="text-sm text-[#ef4444] mt-3 font-medium px-1 flex items-center"><AlertCircle className="w-4 h-4 mr-2" /> {error}</p>}
                 </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#4b5563] uppercase tracking-widest mb-3 px-1">Password</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter password"
+                    className="w-full px-6 py-4 rounded-[16px] bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#10b981] focus:ring-4 focus:ring-[#10b981]/10 outline-none text-base text-[#064e3b] font-medium transition-all"
+                  />
+                </div>
+
+                {error && (
+                  <p className="text-sm text-[#ef4444] font-medium px-1 flex items-center bg-red-50 p-3 rounded-xl">
+                    <AlertCircle className="w-4 h-4 mr-2" /> {error}
+                  </p>
+                )}
 
                 <button
                   type="submit"
-                  className="w-full py-5 bg-[#064e3b] text-white font-bold text-lg rounded-[20px] hover:bg-[#065f46] shadow-xl shadow-emerald-100 transition-all font-heading"
+                  disabled={isLoggingIn || !hospitalId || !password}
+                  className={`w-full py-4 font-bold text-lg rounded-[16px] shadow-xl shadow-emerald-100 transition-all font-heading flex items-center justify-center gap-2 ${isLoggingIn || !hospitalId || !password
+                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                    : 'bg-[#064e3b] text-white hover:bg-[#065f46]'
+                    }`}
                 >
-                  Verify Identity
+                  {isLoggingIn ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Authenticating...
+                    </>
+                  ) : (
+                    'Sign In'
+                  )}
                 </button>
+
+                <div className="text-center text-xs text-slate-400 pt-2">
+                  <p className="font-medium">Test Credentials:</p>
+                  <p className="font-mono mt-1">HOSP-APOLLO / apollo123</p>
+                  <p className="font-mono">HOSP-AIIMS / aiims123</p>
+                  <p className="font-mono">HOSP-FORTIS / fortis123</p>
+                </div>
               </form>
             )}
           </div>
@@ -1043,23 +1491,86 @@ export default function App() {
           <div className="bg-white rounded-[32px] p-12 shadow-sm border border-slate-100 min-h-[600px] animate-in slide-in-from-bottom-4 duration-500">
             {view === 'dashboard' && <DashboardView />}
             {view === 'ledger' && (
-              <div className="max-w-3xl">
+              <div className="max-w-4xl">
                 <h2 className="text-3xl font-bold text-[#064e3b] font-heading mb-10 tracking-tight">On-Chain Ledger</h2>
-                <div className="space-y-4">
-                  {[1, 2, 3, 4, 5].map(i => (
-                    <div key={i} className="p-6 bg-slate-50 rounded-[20px] flex items-center justify-between border border-transparent hover:bg-white hover:border-[#10b981]/20 hover:shadow-sm transition-all group">
-                      <div className="flex items-center gap-5">
-                        <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-sm border border-slate-100 group-hover:bg-[#10b981]/5 transition-colors">
-                          <Database className="w-6 h-6 text-[#10b981]" />
+
+                {/* Patients Section */}
+                <div className="mb-8">
+                  <h3 className="text-lg font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-blue-500" /> Patients ({patients.length})
+                  </h3>
+                  <div className="space-y-2">
+                    {patients.length === 0 ? (
+                      <p className="text-slate-400 text-sm">No patients on ledger</p>
+                    ) : patients.map(p => (
+                      <div key={p.id} className="p-4 bg-slate-50 rounded-xl flex items-center justify-between border hover:bg-white hover:shadow-sm transition-all">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                            <Users className="w-5 h-5 text-blue-600" />
+                          </div>
+                          <div>
+                            <span className="font-mono text-sm font-bold text-slate-700">{p.id}</span>
+                            <span className="text-xs text-slate-500 ml-2">| {p.bloodType} | {p.organNeeded}</span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-base font-semibold text-[#064e3b] block">Block #14,20{6 - i}</span>
-                          <span className="text-xs text-[#4b5563] font-medium">Verified by Peer Node 0</span>
-                        </div>
+                        <Badge status={p.status} />
                       </div>
-                      <div className="px-3 py-1 bg-[#10b981]/10 text-[#10b981] text-[10px] font-bold uppercase tracking-widest rounded-full border border-[#10b981]/20">Commited</div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Donors Section */}
+                <div className="mb-8">
+                  <h3 className="text-lg font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                    <Heart className="w-5 h-5 text-emerald-500" /> Donors ({donors.length})
+                  </h3>
+                  <div className="space-y-2">
+                    {donors.length === 0 ? (
+                      <p className="text-slate-400 text-sm">No donors on ledger</p>
+                    ) : donors.map(d => (
+                      <div key={d.id} className="p-4 bg-slate-50 rounded-xl flex items-center justify-between border hover:bg-white hover:shadow-sm transition-all">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center">
+                            <Heart className="w-5 h-5 text-emerald-600" />
+                          </div>
+                          <div>
+                            <span className="font-mono text-sm font-bold text-slate-700">{d.id}</span>
+                            <span className="text-xs text-slate-500 ml-2">| {d.bloodType || 'N/A'}</span>
+                            {d.name && <span className="text-xs text-slate-500 ml-2">| {d.name}</span>}
+                            <div className="flex gap-1 mt-1">
+                              {(d.organsAvailable || []).map(o => (
+                                <span key={o} className="text-[10px] bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded border border-emerald-100">{o}</span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <Badge status={d.verificationStatus || 'PENDING_VERIFICATION'} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Network Info */}
+                <div className="p-6 bg-gradient-to-r from-slate-50 to-emerald-50 rounded-2xl border">
+                  <h3 className="text-lg font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                    <Server className="w-5 h-5 text-indigo-500" /> Network Status
+                  </h3>
+                  <div className="grid grid-cols-3 gap-4 text-sm">
+                    <div className="text-center p-3 bg-white rounded-xl border">
+                      <div className="text-2xl font-bold text-slate-800">{patients.length + donors.length}</div>
+                      <div className="text-xs text-slate-500">Total Records</div>
                     </div>
-                  ))}
+                    <div className="text-center p-3 bg-white rounded-xl border">
+                      <div className="text-2xl font-bold text-emerald-600">organchannel</div>
+                      <div className="text-xs text-slate-500">Channel</div>
+                    </div>
+                    <div className="text-center p-3 bg-white rounded-xl border">
+                      <div className={`text-2xl font-bold ${apiConnected ? 'text-emerald-600' : 'text-red-500'}`}>
+                        {apiConnected ? 'Online' : 'Offline'}
+                      </div>
+                      <div className="text-xs text-slate-500">Peer Status</div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

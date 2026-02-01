@@ -70,6 +70,16 @@ async function initFabric() {
 
 // API Routes
 
+// Root endpoint
+app.get('/', (req, res) => {
+    res.json({
+        message: 'OrganChain Backend API',
+        version: '1.0',
+        status: 'running',
+        endpoints: ['/api/health', '/api/patients', '/api/donors', '/api/matches', '/api/auth/login']
+    });
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', connected: !!contract });
@@ -82,6 +92,79 @@ app.post('/api/init', async (req, res) => {
         res.json({ success: true, message: 'Ledger initialized with sample data' });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Clear all data from ledger
+app.delete('/api/clear', async (req, res) => {
+    try {
+        await contract.submitTransaction('ClearLedger');
+        res.json({ success: true, message: 'All patients, donors, and matches cleared from ledger' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Initialize hospitals with pre-registered data
+app.post('/api/init-hospitals', async (req, res) => {
+    try {
+        await contract.submitTransaction('InitHospitals');
+        res.json({ success: true, message: 'Hospitals initialized successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Get all registered hospitals (without passwords)
+app.get('/api/hospitals', async (req, res) => {
+    try {
+        const result = await contract.evaluateTransaction('GetAllHospitals');
+        const hospitals = parseChainResult(result);
+        // Remove password hashes before sending
+        const safeHospitals = hospitals.map(h => ({
+            id: h.id,
+            name: h.name,
+            location: h.location,
+            isActive: h.isActive
+        }));
+        res.json(safeHospitals);
+    } catch (error) {
+        console.error('Error getting hospitals:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Hospital login/authentication
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { hospitalId, passwordHash } = req.body;
+
+        if (!hospitalId || !passwordHash) {
+            return res.status(400).json({ success: false, error: 'Hospital ID and password are required' });
+        }
+
+        const result = await contract.evaluateTransaction('AuthenticateHospital', hospitalId, passwordHash);
+        const hospitalInfo = parseChainResult(result);
+
+        res.json({
+            success: true,
+            hospital: hospitalInfo,
+            message: 'Authentication successful'
+        });
+    } catch (error) {
+        console.error('Auth error:', error.message);
+        res.status(401).json({ success: false, error: 'Invalid credentials' });
+    }
+});
+
+// Debug: Get full hospital details (REMOVE IN PRODUCTION)
+app.get('/api/debug/hospital/:id', async (req, res) => {
+    try {
+        const result = await contract.evaluateTransaction('GetHospital', req.params.id);
+        const hospital = parseChainResult(result);
+        res.json(hospital);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -105,6 +188,27 @@ function parseChainResult(result) {
     } catch (e) {
         console.error('Parse error:', e.message);
         return [];
+    }
+}
+
+
+// Helper for IPFS upload
+async function uploadToIPFS(data) {
+    if (!process.env.WEB3_STORAGE_TOKEN) {
+        console.warn('WEB3_STORAGE_TOKEN not set. Skipping IPFS upload.');
+        return '';
+    }
+    try {
+        const { Web3Storage, File } = await import('web3.storage');
+        const client = new Web3Storage({ token: process.env.WEB3_STORAGE_TOKEN });
+        const buffer = Buffer.from(JSON.stringify(data));
+        const files = [new File([buffer], 'data.json')];
+        const cid = await client.put(files);
+        console.log('✅ Uploaded to IPFS:', cid);
+        return cid;
+    } catch (error) {
+        console.error('❌ IPFS Upload Error:', error);
+        return '';
     }
 }
 
@@ -132,7 +236,20 @@ app.get('/api/patients/:id', async (req, res) => {
 // Create patient
 app.post('/api/patients', async (req, res) => {
     try {
-        const { id, nameHash, bloodType, hla, organNeeded, ipfsHash, hospitalId } = req.body;
+        const { id, nameHash, bloodType, hla, organNeeded, hospitalId } = req.body;
+
+        // Upload detailed data to IPFS
+        const ipfsHash = await uploadToIPFS({
+            docType: 'patient',
+            id,
+            nameHash,
+            bloodType,
+            hla,
+            organNeeded,
+            hospitalId,
+            createdAt: new Date().toISOString()
+        });
+
         await contract.submitTransaction(
             'CreatePatient',
             id,
@@ -143,7 +260,7 @@ app.post('/api/patients', async (req, res) => {
             ipfsHash,
             hospitalId
         );
-        res.json({ success: true, id });
+        res.json({ success: true, id, ipfsHash });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -170,20 +287,49 @@ app.get('/api/donors/:id', async (req, res) => {
     }
 });
 
-// Create donor
+// Create donor (self-registration)
 app.post('/api/donors', async (req, res) => {
     try {
-        const { id, bloodType, hla, organsAvailable, ipfsHash, consentHash } = req.body;
+        const { id, name, email, phone, bloodType, hla, organsAvailable, consentHash } = req.body;
+
+        // Upload detailed data to IPFS
+        const ipfsHash = await uploadToIPFS({
+            docType: 'donor',
+            id,
+            name,
+            email,
+            phone,
+            bloodType,
+            hla,
+            organsAvailable,
+            consentHash,
+            createdAt: new Date().toISOString()
+        });
+
         await contract.submitTransaction(
             'CreateDonor',
             id,
+            name || '',
+            email || '',
+            phone || '',
             bloodType,
             hla,
             JSON.stringify(organsAvailable),
             ipfsHash,
             consentHash
         );
-        res.json({ success: true, id });
+        res.json({ success: true, id, message: 'Donor registered. Pending hospital verification.', ipfsHash });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Verify donor (hospital only)
+app.post('/api/donors/:id/verify', async (req, res) => {
+    try {
+        const { hospitalId, status } = req.body; // status: VERIFIED or REJECTED
+        await contract.submitTransaction('VerifyDonor', req.params.id, hospitalId, status);
+        res.json({ success: true, message: `Donor ${status.toLowerCase()} successfully` });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -213,6 +359,28 @@ app.patch('/api/patients/:id/status', async (req, res) => {
     try {
         const { status } = req.body;
         await contract.submitTransaction('UpdatePatientStatus', req.params.id, status);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// Get all matches
+app.get('/api/matches', async (req, res) => {
+    try {
+        const result = await contract.evaluateTransaction('GetAllMatches');
+        res.json(parseChainResult(result));
+    } catch (error) {
+        console.error('Error getting matches:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Update donor status (remove used organ)
+app.patch('/api/donors/:id/status', async (req, res) => {
+    try {
+        const { organToRemove } = req.body;
+        await contract.submitTransaction('UpdateDonorStatus', req.params.id, organToRemove);
         res.json({ success: true });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
