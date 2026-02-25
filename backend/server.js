@@ -6,6 +6,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
+// Local IPFS daemon RPC endpoint
+const IPFS_API = 'http://127.0.0.1:5001';
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -20,7 +23,7 @@ const PEER_HOST_ALIAS = 'peer0.org1.example.com';
 // Paths to crypto materials (relative to the fabric-samples/test-network)
 const CRYPTO_PATH = path.resolve(__dirname, '..', 'fabric-samples', 'test-network', 'organizations', 'peerOrganizations', 'org1.example.com');
 const KEY_DIR_PATH = path.join(CRYPTO_PATH, 'users', 'User1@org1.example.com', 'msp', 'keystore');
-const CERT_PATH = path.join(CRYPTO_PATH, 'users', 'User1@org1.example.com', 'msp', 'signcerts', 'User1@org1.example.com-cert.pem');
+const CERT_PATH = path.join(CRYPTO_PATH, 'users', 'User1@org1.example.com', 'msp', 'signcerts', 'cert.pem');
 const TLS_CERT_PATH = path.join(CRYPTO_PATH, 'peers', 'peer0.org1.example.com', 'tls', 'ca.crt');
 
 let gateway;
@@ -192,25 +195,46 @@ function parseChainResult(result) {
 }
 
 
-// Helper for IPFS upload
+// Upload JSON data to local IPFS node and return the CID
 async function uploadToIPFS(data) {
-    if (!process.env.WEB3_STORAGE_TOKEN) {
-        console.warn('WEB3_STORAGE_TOKEN not set. Skipping IPFS upload.');
-        return '';
-    }
     try {
-        const { Web3Storage, File } = await import('web3.storage');
-        const client = new Web3Storage({ token: process.env.WEB3_STORAGE_TOKEN });
-        const buffer = Buffer.from(JSON.stringify(data));
-        const files = [new File([buffer], 'data.json')];
-        const cid = await client.put(files);
-        console.log('✅ Uploaded to IPFS:', cid);
+        const json = JSON.stringify(data, null, 2);
+        const form = new FormData();
+        form.append('file', new Blob([json], { type: 'application/json' }), 'data.json');
+
+        const res = await fetch(`${IPFS_API}/api/v0/add?pin=true`, {
+            method: 'POST',
+            body: form,
+        });
+        if (!res.ok) throw new Error(`IPFS add failed: ${res.status}`);
+        const result = await res.json();
+        const cid = result.Hash;
+        console.log('\u2705 Uploaded to local IPFS:', cid);
         return cid;
     } catch (error) {
-        console.error('❌ IPFS Upload Error:', error);
+        console.error('\u274c IPFS Upload Error:', error.message);
+        console.error('   Is the IPFS daemon running? (port 5001)');
         return '';
     }
 }
+
+// Fetch JSON data from local IPFS by CID
+async function getFromIPFS(cid) {
+    const res = await fetch(`${IPFS_API}/api/v0/cat?arg=${cid}`, { method: 'POST' });
+    if (!res.ok) throw new Error(`IPFS cat failed for CID ${cid}: ${res.status}`);
+    const text = await res.text();
+    return JSON.parse(text);
+}
+
+// GET /api/ipfs/:cid — retrieve stored data from local IPFS by CID
+app.get('/api/ipfs/:cid', async (req, res) => {
+    try {
+        const data = await getFromIPFS(req.params.cid);
+        res.json({ cid: req.params.cid, data });
+    } catch (error) {
+        res.status(404).json({ error: error.message });
+    }
+});
 
 // Get all patients
 app.get('/api/patients', async (req, res) => {

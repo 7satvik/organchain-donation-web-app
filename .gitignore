@@ -32,3 +32,8 @@ chaincode/organchain/vendor/
 # Temporary files
 *.tmp
 *.swp
+
+# Local data
+.ipfs/
+.logs/
+bin/
