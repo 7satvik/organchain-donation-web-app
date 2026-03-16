@@ -1,0 +1,23 @@
+name: OrganChain Benchmark
+version: "2.0.0"
+
+caliper:
+  blockchain: fabric
+
+channels:
+  - channelName: organchannel
+    contracts:
+      - id: organchain
+
+organizations:
+  - mspid: Org1MSP
+    identities:
+      certificates:
+        - name: "User1"
+          clientPrivateKey:
+            path: "/home/batman/Desktop/btc/organchain/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/users/User1@org1.example.com/msp/keystore/6083e972ce64b4f7a826aa567ce7c768a2ad0fd9d74f952360eebe6fdf47872a_sk"
+          clientSignedCert:
+            path: "/home/batman/Desktop/btc/organchain/fabric-samples/test-network/organizations/peerOrganizations/org1.example.com/users/User1@org1.example.com/msp/signcerts/cert.pem"
+    connectionProfile:
+      path: "/home/batman/Desktop/btc/organchain/caliper-workspace/networks/connection-profile.json"
+      discover: true

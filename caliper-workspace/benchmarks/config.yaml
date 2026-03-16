@@ -1,0 +1,33 @@
+test:
+  name: organchain-benchmark
+  description: Benchmark for OrganChain chaincode
+  workers:
+    number: 4
+  rounds:
+    - label: createPatient
+      description: Create patient benchmark
+      txNumber: 1000
+      rateControl:
+        type: fixed-rate
+        opts:
+          tps: 200
+      workload:
+        module: workload/createPatient.js
+    - label: createDonor
+      description: Create donor benchmark
+      txNumber: 1000
+      rateControl:
+        type: fixed-rate
+        opts:
+          tps: 200
+      workload:
+        module: workload/createDonor.js
+    - label: getAllPatients
+      description: Read all patients benchmark
+      txDuration: 30
+      rateControl:
+        type: fixed-rate
+        opts:
+          tps: 200
+      workload:
+        module: workload/getAllPatients.js
