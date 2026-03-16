@@ -1,6 +1,6 @@
-# OrganChain - Decentralized Donation Platform 🏥
+# Decentralized Donation Platform 🏥
 
-OrganChain is a blockchain-based application designed to bring transparency, security, and efficiency to the organ donation process. Built on **Hyperledger Fabric**, it ensures tamper-proof records for donors, patients, and transplants.
+Blockchain-based application designed to bring transparency, security, and efficiency to the organ donation process. Built on **Hyperledger Fabric**, it ensures tamper-proof records for donors, patients, and transplants.
 
 ## 🚀 Features
 
